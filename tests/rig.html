@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rig Gallery</title>
+<link rel="stylesheet" href="../css/main.css">
+<style>
+  body { margin: 0; background: #14162a; color: #ddd; font: 13px system-ui, sans-serif; overflow: auto; }
+  svg { display: block; width: 100%; height: auto; background: #1d2140; }
+  .bar { padding: 8px 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: #2c3366; color: #fff; border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<svg id="svg" viewBox="0 0 1600 900"><g id="layer"></g></svg>
+<script type="module">
+  import { CharacterRig } from '../js/characters/rig.js';
+  import { CHARACTERS } from '../js/characters/index.js';
+
+  const params = new URLSearchParams(location.search);
+  const id = params.get('c') || 'goku';
+  const def = CHARACTERS[id];
+  const layer = document.getElementById('layer');
+  const big = params.get('big');
+  const poses = big ? big.split(',') : Object.keys(def.poses);
+  const forms = Object.keys(def.forms || { none: 1 });
+  const rigs = [];
+  const cols = 8;
+  poses.forEach((p, i) => {
+    const r = new CharacterRig(def, layer);
+    const n = big ? poses.length : cols;
+    r.x = big ? (1600 / n) * (i + 0.5) : 110 + (i % cols) * 190;
+    r.y = big ? 820 : 300 + Math.floor(i / cols) * 300;
+    r.scale = (def.scale || 1) * (big ? 2.2 / Math.max(1, n * 0.6) : 0.62);
+    r.setPose(p, true);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', r.x); t.setAttribute('y', r.y + 26); t.setAttribute('fill', '#9ab'); t.setAttribute('font-size', '16'); t.setAttribute('text-anchor', 'middle');
+    t.textContent = p; layer.appendChild(t);
+    rigs.push(r);
+  });
+  const bar = document.getElementById('bar');
+  for (const f of forms) {
+    const b = document.createElement('button'); b.textContent = f;
+    b.onclick = () => rigs.forEach((r) => r.setForm(f));
+    bar.appendChild(b);
+  }
+  if (params.get('form')) rigs.forEach((r) => r.setForm(params.get('form'), true));
+  let last = performance.now();
+  const loop = (now) => { const dt = Math.min(0.05, (now - last) / 1000); last = now; rigs.forEach((r) => r.update(dt)); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+  window.__rigs = rigs;
+</script>
+</body>
+</html>

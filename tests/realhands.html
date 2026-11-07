@@ -1,0 +1,156 @@
+<!doctype html>
+<!--
+  Real-photo gesture check: runs MediaPipe HandLandmarker on photos of real hands (MediaPipe's own
+  test images), feeds the landmarks through the game's feature + gesture code and prints the scores.
+  Two-hand poses are built by placing two real hands side by side on a canvas.
+  Open via the dev server: http://localhost:8000/tests/realhands.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Real Hands Check</title>
+<script type="importmap">
+{ "imports": { "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs" } }
+</script>
+<style>
+  body { background: #0b0816; color: #e8e6f0; font: 13px/1.4 ui-monospace, Menlo, monospace; margin: 16px; }
+  .row { display: flex; gap: 12px; align-items: flex-start; margin: 10px 0; border-top: 1px solid #2a2440; padding-top: 10px; }
+  canvas { width: 240px; height: auto; background: #000; flex: none; }
+  pre { margin: 0; white-space: pre-wrap; }
+  .bad { color: #ff6b6b; } .good { color: #7dff9b; }
+</style>
+</head>
+<body>
+<h1>Real hands check</h1>
+<div id="out">Loading MediaPipe…</div>
+<script type="module">
+import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import { MEDIAPIPE } from '../js/config.js';
+import { handFeatures, frameFeatures } from '../js/input/features.js';
+import { scoreGestures } from '../js/input/gestureDefs.js';
+import { calibration } from '../js/input/calibration.js';
+
+const BASE = 'https://storage.googleapis.com/mediapipe-assets/';
+const out = document.getElementById('out');
+const results = [];
+window.__realhands = results;
+
+const load = (src) => new Promise((res, rej) => {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => res(img);
+  img.onerror = () => rej(new Error('image failed: ' + src));
+  img.src = src;
+});
+
+const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE.WASM);
+let lmk, delegate = 'GPU';
+try {
+  lmk = await HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MEDIAPIPE.MODEL_URL, delegate: 'GPU' }, runningMode: 'IMAGE', numHands: 2 });
+} catch {
+  delegate = 'CPU';
+  lmk = await HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MEDIAPIPE.MODEL_URL, delegate: 'CPU' }, runningMode: 'IMAGE', numHands: 2 });
+}
+out.textContent = `MediaPipe ready (${delegate}).`;
+
+const cfg = calibration.cfg;
+const fmt = (o) => Object.entries(o).map(([k, v]) => `${k} ${v.toFixed(2)}`).join('  ');
+
+function analyse(canvas, label, expect) {
+  const r = lmk.detect(canvas);
+  const aspect = canvas.width / canvas.height;
+  const tracks = r.landmarks.map((l) => ({ lm: l.map((p) => ({ x: 1 - p.x, y: p.y, z: p.z })) }))
+    .sort((a, b) => a.lm[0].x - b.lm[0].x);
+  const F = frameFeatures(tracks, aspect, cfg);
+  const scores = scoreGestures(F, cfg);
+  const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  const got = top && top[1] > 0.62 ? top[0] : 'idle';
+  const ratios = tracks.map((t) => [8, 12, 16, 20].map((tip, i) => {
+    const d = (a, b) => Math.hypot((a.x - b.x) * aspect, a.y - b.y, (a.z - b.z) * aspect);
+    return (d(t.lm[0], t.lm[tip]) / d(t.lm[0], t.lm[tip - 2])).toFixed(2);
+  }).join(' '));
+  const lines = [
+    `${label}  hands=${F.count}  expect=${expect}  got=${got}`,
+    ...F.hands.map((h, i) => `  hand${i}: spread ${h.spread.toFixed(2)} peace ${h.peace.toFixed(2)}  curl ${h.curls.map((c) => c.toFixed(2)).join(' ')}  ratio ${ratios[i]}  fist ${h.fistness.toFixed(2)}  point ${h.point.toFixed(2)}  wristY ${h.wrist.y.toFixed(2)}`),
+    F.pair ? `  pair: wristDist ${F.pair.wristDist.toFixed(2)}  avgY ${F.pair.avgY.toFixed(2)}  lowY ${F.pair.lowY.toFixed(2)}` : '',
+    `  scores: ${fmt(scores)}`,
+  ].filter(Boolean);
+  const row = document.createElement('div');
+  row.className = 'row';
+  const shown = document.createElement('canvas');
+  shown.width = canvas.width; shown.height = canvas.height;
+  const sctx = shown.getContext('2d');
+  sctx.drawImage(canvas, 0, 0);
+  sctx.fillStyle = '#ffd23f';
+  for (const l of r.landmarks) for (const p of l) sctx.fillRect(p.x * canvas.width - 3, p.y * canvas.height - 3, 6, 6);
+  const pre = document.createElement('pre');
+  pre.textContent = lines.join('\n');
+  pre.className = got === expect ? 'good' : 'bad';
+  row.append(shown, pre);
+  document.body.append(row);
+  results.push({ label, expect, got, ok: got === expect, hands: F.count, scores, curls: F.hands.map((h) => h.curls), spread: F.hands.map((h) => +h.spread.toFixed(2)), peace: F.hands.map((h) => +h.peace.toFixed(2)), ratios, pair: F.pair && { wristDist: F.pair.wristDist, avgY: F.pair.avgY, lowY: F.pair.lowY } });
+}
+
+const imgs = {};
+for (const n of ['fist', 'pointing_up', 'thumb_up', 'victory', 'right_hands', 'left_hands', 'pointing_up_rotated']) imgs[n] = await load(BASE + n + '.jpg');
+
+// Single photos, as they are. (right_hands / left_hands show two open hands, one held high → Spirit Bomb.)
+const single = { fist: 'power', pointing_up: 'kiblast', thumb_up: 'power', victory: 'teleport', right_hands: 'spirit', left_hands: 'spirit', pointing_up_rotated: 'kiblast' };
+for (const [n, expect] of Object.entries(single)) {
+  const c = document.createElement('canvas');
+  c.width = imgs[n].naturalWidth; c.height = imgs[n].naturalHeight;
+  c.getContext('2d').drawImage(imgs[n], 0, 0);
+  analyse(c, n, expect);
+}
+
+/**
+ * Two real hands on one 4:3 "webcam" frame: the photo and its mirror image (so it reads as a left
+ * and a right hand), scaled so each hand fills `scale` of the frame height, with the wrists `gap`
+ * frame-widths apart, centred at height `cy`.
+ */
+function pair(name, { scale, gap, cy, crop = [0, 0, 1, 1] }) {
+  const img = cropped(imgs[name], crop);
+  const W = 640, H = 480;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#6b5a4e';
+  ctx.fillRect(0, 0, W, H);
+  const h = H * scale, w = h * (img.width / img.height);
+  const cx = W / 2;
+  // right half: the photo; left half: mirrored copy
+  ctx.drawImage(img, cx + (gap * W) / 2 - w / 2, cy * H - h / 2, w, h);
+  ctx.save();
+  ctx.translate(W, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(img, cx + (gap * W) / 2 - w / 2, cy * H - h / 2, w, h);
+  ctx.restore();
+  return c;
+}
+
+// right_hands.jpg holds two hands; its right half is one upright open palm.
+function cropped(img, [x, y, w, h]) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * w); c.height = Math.round(img.naturalHeight * h);
+  c.getContext('2d').drawImage(img, -img.naturalWidth * x, -img.naturalHeight * y);
+  return c;
+}
+const PALM = [0.5, 0, 0.5, 1];
+
+const combos = [
+  ['right_hands', { crop: PALM, scale: 0.42, gap: 0.5, cy: 0.66 }, 'idle', 'relaxed open palms at chest (fingers not fanned) → neutral'],
+  ['right_hands', { crop: PALM, scale: 0.42, gap: 0.5, cy: 0.24 }, 'spirit', 'open palms apart, raised'],
+  ['right_hands', { crop: PALM, scale: 0.42, gap: 0.26, cy: 0.66 }, 'idle', 'relaxed open palms side by side → neutral'],
+  ['fist', { scale: 0.45, gap: 0.45, cy: 0.6 }, 'power', 'two fists'],
+  ['pointing_up', { scale: 0.45, gap: 0.5, cy: 0.6 }, 'kiblast', 'two pointing hands'],
+  ['victory', { scale: 0.45, gap: 0.5, cy: 0.6 }, 'teleport', 'two ✌️ signs'],
+];
+for (const [n, opts, expect, label] of combos) analyse(pair(n, opts), `pair ${n} (${label})`, expect);
+
+const pass = results.filter((r) => r.ok).length;
+out.innerHTML = `MediaPipe ${delegate}: <b class="${pass === results.length ? 'good' : 'bad'}">${pass}/${results.length}</b> as expected`;
+window.__realhandsDone = true;
+</script>
+</body>
+</html>

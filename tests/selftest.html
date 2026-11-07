@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limit Break Self-Test</title>
+<style>
+  :root { --bg: #0b0d17; --fg: #e8ecff; --muted: #8a93b8; --pass: #3ddc84; --fail: #ff5c6c; --line: #23284a; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 16px; }
+  h1 { font: 600 18px system-ui, sans-serif; margin: 0 0 4px; }
+  #summary { margin: 0 0 16px; color: var(--muted); }
+  h2 { font: 600 14px system-ui, sans-serif; color: var(--muted); margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .row { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .row .detail { grid-column: 2; color: var(--muted); font-size: 12px; word-break: break-word; }
+  .pass { color: var(--pass); } .fail { color: var(--fail); }
+</style>
+</head>
+<body>
+<h1>Limit Break — self-test</h1>
+<p id="summary">running…</p>
+<div id="out"></div>
+<script type="module">
+  import { gestureTests } from './gestureTests.js';
+
+  const out = document.getElementById('out');
+  const results = { passed: 0, failed: 0, failures: [] };
+  const t = {
+    group(name) { const h = document.createElement('h2'); h.textContent = name; out.appendChild(h); },
+    ok(name, cond, detail = '') {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const status = document.createElement('span');
+      status.className = cond ? 'pass' : 'fail';
+      status.textContent = cond ? 'PASS' : 'FAIL';
+      const label = document.createElement('span');
+      label.textContent = name;
+      row.append(status, label);
+      if (detail) { const d = document.createElement('span'); d.className = 'detail'; d.textContent = detail; row.appendChild(d); }
+      out.appendChild(row);
+      if (cond) results.passed++; else { results.failed++; results.failures.push(`${name} — ${detail}`); }
+    },
+  };
+
+  const suites = [gestureTests];
+  try {
+    const { combatTests } = await import('./combatTests.js');
+    suites.push(combatTests);
+  } catch (err) {
+    if (!String(err).includes('Failed to fetch') && !String(err).includes('Importing a module script failed')) throw err;
+  }
+  for (const suite of suites) {
+    try { suite(t); } catch (err) { t.ok(`${suite.name} crashed`, false, String(err.stack || err)); }
+  }
+  document.getElementById('summary').textContent = `${results.passed} passed, ${results.failed} failed`;
+  window.__selftest = results;
+</script>
+</body>
+</html>

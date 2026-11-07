@@ -1,0 +1,104 @@
+<!doctype html>
+<!--
+  LIMIT BREAK — Tournament of Power (hand-gesture fighting prototype)
+
+  RUN
+    Serve this folder over http(s) (camera access needs a secure context; localhost counts):
+      python3 tools/devserver.py       →  open http://localhost:8000   (any static server works)
+    Phones need HTTPS: see README.md ("Play on your phone").
+
+  GEMINI API KEY
+    • Paste it into GEMINI.API_KEY in js/config.js, or
+    • leave that blank and enter it in the first-launch prompt / Settings (kept only in this
+      browser's localStorage).
+
+  MOCK FALLBACK
+    With no key, all dialogue comes from js/dialogue/mock.js. With a key, every line still falls
+    back to the mock on a network error, non-2xx response, empty reply, timeout
+    (GEMINI.TIMEOUT_MS) or the client-side rate cap (GEMINI.MAX_RPM). The game never waits on it.
+
+  CONTROLS (7 gestures)
+    ✊ fist = power up / transform · 👐 cupped hands, wrists close = beam (push forward to fire) ·
+    🙌 open hand(s) raised = Spirit Bomb / Supernova (lower to throw) · ✌️ two fingers = Instant
+    Transmission · 👉 point = homing ki blasts · 🖐️ one wide-open palm = Energy Barrier ·
+    🥋 relaxed hands = neutral stance. Plus ✊ jab toward the camera = punch, 🦵 knee up / kick = kick
+    (body tracking; your legs must be in view), 👉👈 fingertips touching = fusion (again while fused =
+    the fusion's ultimate).
+
+  GRAPHICS
+    3D (Three.js, js/render3d/) by default; Settings → Graphics → Classic 2D, or automatic without WebGL.
+    Keys: P K S F G, Space fires, T or ←/→ teleport, J punch, L kick, X fuse / ultimate, U god form, D debug, M mute, Esc pause.
+
+  Fan-made prototype. Goku, Beerus and the Tournament of Power belong to their rights holders
+  (Bird Studio / Shueisha / Toei). A commercial release needs a license.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#06030f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Limit Break</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<script type="importmap">
+{ "imports": {
+  "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs",
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app" class="is-menu">
+  <div id="stage">
+    <svg id="arena-svg" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true"></svg>
+    <canvas id="fx-back" aria-hidden="true"></canvas>
+    <svg id="fighters-svg" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <!-- Soft 3D shading for the fighters: light from the upper left, a rim highlight, rounded edges. -->
+        <filter id="shade3d" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="3.2" result="blur"/>
+          <feDiffuseLighting in="blur" surfaceScale="5" diffuseConstant="1.15" lighting-color="#ffffff" result="diffuse"><feDistantLight azimuth="225" elevation="48"/></feDiffuseLighting>
+          <feComposite in="diffuse" in2="SourceAlpha" operator="in" result="diffuseIn"/>
+          <feBlend in="SourceGraphic" in2="diffuseIn" mode="multiply" result="shaded"/>
+          <feSpecularLighting in="blur" surfaceScale="5" specularConstant="0.55" specularExponent="22" lighting-color="#ffffff" result="spec"><feDistantLight azimuth="225" elevation="40"/></feSpecularLighting>
+          <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
+          <feComposite in="shaded" in2="specIn" operator="arithmetic" k1="0" k2="1" k3="0.6" k4="0"/>
+        </filter>
+      </defs>
+      <g id="fighters-layer"></g>
+    </svg>
+    <canvas id="fx-front" aria-hidden="true"></canvas>
+  </div>
+
+  <div id="hud"></div>
+
+  <div id="corner">
+    <button type="button" id="btn-sound" class="icon-btn" aria-label="Toggle sound">🔊</button>
+    <button type="button" id="btn-fullscreen" class="icon-btn" aria-label="Toggle fullscreen">⛶</button>
+    <button type="button" id="btn-pause" class="icon-btn" aria-label="Pause or settings">❚❚</button>
+  </div>
+
+  <div id="dock">
+    <div id="dock-info"><div id="hud-info"></div></div>
+    <div id="dock-controls">
+      <div id="touch-controls"></div>
+      <div id="cam-panel">
+        <video id="cam-video" playsinline muted autoplay></video>
+        <canvas id="cam-overlay"></canvas>
+        <div id="gesture-chip">Starting…</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="cutscene"></div>
+  <div id="screens"></div>
+  <div id="debug" hidden></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
