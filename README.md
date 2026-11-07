@@ -14,6 +14,12 @@ if the device has no WebGL).
 
 Works on laptops (webcam, keyboard) and phones (front camera, on-screen buttons).
 
+## Play online
+
+**https://yuvraj235.github.io/limit-break/** (GitHub Pages, served straight from `main`; each push
+updates it within a minute or two). Allow the camera when asked, or play with the on-screen
+buttons and keyboard. A Gemini key pasted in Settings stays in that browser's local storage only.
+
 ## Run it
 
 ```bash
